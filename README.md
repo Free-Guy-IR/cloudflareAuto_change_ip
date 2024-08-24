@@ -32,7 +32,7 @@ nano test.py
 
 
 ```
-- ** API_TOKEN = 'api_cloudflare' ** 
+API_TOKEN = 'api_cloudflare' 
 ```
 در  domain_zone_id  هم وقتی وارد دامنه میشید در بخش  Overview
  قسمت api نوشته Zone ID
