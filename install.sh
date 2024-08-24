@@ -1,28 +1,18 @@
 #!/bin/bash
 
-# بروزرسانی و نصب پیش‌نیازها
-echo "Updating package list and installing prerequisites..."
+# به‌روزرسانی پکیج‌ها
 sudo apt-get update
-sudo apt-get install -y git python3 python3-pip
 
-# کلون کردن مخزن GitHub
-echo "Cloning the GitHub repository..."
-git clone https://github.com/mohammadahadpour/cloudflareAuto_change_ip.git
+# نصب Python و pip در صورت نیاز
+sudo apt-get install -y python3 python3-pip
 
-# ورود به دایرکتوری پروژه
-cd cloudflareAuto_change_ip
+# نصب کتابخانه‌های مورد نیاز
+pip3 install requests ping3
 
-# ایجاد فایل requirements.txt
-echo "Creating requirements.txt..."
-echo "requests" > requirements.txt
-echo "ping3" >> requirements.txt
+# دانلود فایل test.py
+curl -L -o test.py https://raw.githubusercontent.com/mohammadahadpour/cloudflareAuto_change_ip/main/test.py
 
-# نصب وابستگی‌های Python
-echo "Installing Python dependencies..."
-pip3 install -r requirements.txt
+# دادن مجوز اجرایی به فایل
+chmod +x test.py
 
-# پیغام موفقیت
-echo "Installation complete. You can now run your script."
-
-# پایان اسکریپت
-exit 0
+echo "Installation complete. You can now run test.py using 'python3 test.py'."
