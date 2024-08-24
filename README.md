@@ -34,7 +34,7 @@ nano test.py
 ```
 - ** API_TOKEN = 'api_cloudflare' ** 
 ```
-در  domain_zone_id  هم وقتی واد دامنه میشید در بخش  Overview
+در  domain_zone_id  هم وقتی وارد دامنه میشید در بخش  Overview
  قسمت api نوشته Zone ID
   باید اون رو جایگزین کنیدش .
 
@@ -70,7 +70,6 @@ ADDRESSES = [
 ```
 TELEGRAM_TOKEN = 'token_telegram'
 CHAT_ID = 'admin_id'
-STATUS_FILE = 'status.json'
 ```
 
 باید اطلاعات ربات تلگرام و آیدی عددی اکانت تلگرامتون که  ربات لاگ هارو براتون بفرسته رو باید قرار بدید 
