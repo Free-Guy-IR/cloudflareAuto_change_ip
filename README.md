@@ -93,4 +93,6 @@ python3 cloudflareAuto_change_ip.py
 
 ```
 
- 
+
+ [لینک کانال تلگرام اطلاع رسانی بروزرسانی های من](https://t.me/Freeguy_IR)
+
