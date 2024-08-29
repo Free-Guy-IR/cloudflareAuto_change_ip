@@ -20,18 +20,20 @@ fi
 # ایجاد فایل requirements.txt
 echo "Creating requirements.txt..."
 echo "requests" > requirements.txt
-echo "aiohttp" > requirements.txt
+echo "aiohttp" >> requirements.txt
 echo "ping3" >> requirements.txt
 
 # نصب کتابخانه‌های Python
 echo "Installing Python dependencies..."
 pip3 install -r requirements.txt
 
-# دانلود فایل test.py
-echo "Downloading test.py..."
-curl -L -o test.py https://raw.githubusercontent.com/mohammadahadpour/cloudflareAuto_change_ip/main/test.py
+# دانلود فایل V0.1.py
+echo "Downloading V0.1.py..."
+curl -L -o V0.1.py https://raw.githubusercontent.com/mohammadahadpour/cloudflareAuto_change_ip/main/V0.1.py
 
 # دادن مجوز اجرایی به فایل
-chmod +x test.py
+chmod +x V0.1.py
 
-echo "Installation complete. You can now run your script using 'python3 test.py'."
+echo "Installation complete. Running the Python script..."
+# اجرای اسکریپت پایتون
+python3 V0.1.py
