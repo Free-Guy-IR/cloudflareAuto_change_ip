@@ -29,10 +29,7 @@ pip3 install -r requirements.txt
 
 # دانلود فایل cloudflareAuto_change_ip.py
 echo "Downloading cloudflareAuto_change_ip.py..."
-curl -L -o cloudflareAuto_change_ip.py https://raw.githubusercontent.com/mohammadahadpour/cloudflareAuto_change_ip/main/V0.1.py
-
-# دادن مجوز اجرایی به فایل
-chmod +x cloudflareAuto_change_ip.py
+curl -L -o cloudflareAuto_change_ip.py https://raw.githubusercontent.com/mohammadahadpour/cloudflareAuto_change_ip/main/cloudflareAuto_change_ip.py
 
 # نمایش پیغام به کاربر برای کانفیگ فایل
 echo "Installation complete."
