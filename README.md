@@ -24,7 +24,7 @@ bash <(curl -Ls https://raw.githubusercontent.com/Free-Guy-IR/cloudflareAuto_cha
 ```bash
 cd cloudflareAuto_change_ip
 
-nano test.py
+nano cloudflareAuto_change_ip.py
 ```
 وقتی فایل  باز شد باید بخش های زیر رو جایگزین کنید 
 
