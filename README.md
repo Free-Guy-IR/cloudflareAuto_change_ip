@@ -88,7 +88,7 @@ time.sleep(120)
 ```
 screen
 
-python3 test.py
+python3 cloudflareAuto_change_ip.py
 
 ```
 
