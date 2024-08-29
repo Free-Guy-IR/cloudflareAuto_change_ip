@@ -20,6 +20,7 @@ fi
 # ایجاد فایل requirements.txt
 echo "Creating requirements.txt..."
 echo "requests" > requirements.txt
+echo "aiohttp" > requirements.txt
 echo "ping3" >> requirements.txt
 
 # نصب کتابخانه‌های Python
