@@ -27,13 +27,13 @@ echo "ping3" >> requirements.txt
 echo "Installing Python dependencies..."
 pip3 install -r requirements.txt
 
-# دانلود فایل V0.1.py
-echo "Downloading V0.1.py..."
-curl -L -o V0.1.py https://raw.githubusercontent.com/mohammadahadpour/cloudflareAuto_change_ip/main/V0.1.py
+# دانلود فایل cloudflareAuto_change_ip.py
+echo "Downloading cloudflareAuto_change_ip.py..."
+curl -L -o cloudflareAuto_change_ip.py https://raw.githubusercontent.com/mohammadahadpour/cloudflareAuto_change_ip/main/V0.1.py
 
 # دادن مجوز اجرایی به فایل
-chmod +x V0.1.py
+chmod +x cloudflareAuto_change_ip.py
 
-echo "Installation complete. Running the Python script..."
-# اجرای اسکریپت پایتون
-python3 V0.1.py
+# نمایش پیغام به کاربر برای کانفیگ فایل
+echo "Installation complete."
+echo "Please configure the 'cloudflareAuto_change_ip.py' script before running it."
