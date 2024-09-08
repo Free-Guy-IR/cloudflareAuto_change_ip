@@ -37,10 +37,13 @@ API_TOKEN = 'api_cloudflare'
 ```
 در  domain_zone_id  هم وقتی وارد دامنه میشید در بخش  Overview
  قسمت api نوشته Zone ID
-  باید اون رو جایگزین کنیدش .
+  باید Zone ID هر دامنه  رو جایگزین کنیدش .
 
 ```
-ZONE_ID = 'domain_zone_id'
+ZONE_IDS = [
+    'ZONE_IDS1',
+    'ZONE_IDS2'
+]'
 ```
 
 
