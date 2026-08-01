@@ -132,4 +132,7 @@ fi
 echo
 success "نصب کامل شد."
 echo -e "${CYAN}برای تغییر بعدی تنظیمات:${NC} ${BOLD}${WORKDIR}/venv/bin/python3 cloudflareAuto_change_ip.py --reconfigure --setup${NC}"
+echo -e "${CYAN}برای تست سریع وضعیت (بدون منتظر ماندن برای یک چرخه‌ی کامل):${NC} ${BOLD}${WORKDIR}/venv/bin/python3 cloudflareAuto_change_ip.py --check${NC}"
+echo -e "${CYAN}برای بروزرسانی به نسخه‌ی جدید در آینده:${NC} ${BOLD}cd ${WORKDIR} && bash update.sh${NC}"
+echo -e "${CYAN}مدیریت رکوردهای DNS از تلگرام:${NC} دستور ${BOLD}/domains${NC} را به ربات تلگرام‌تان ارسال کنید"
 echo -e "${CYAN}لاگ خطاها:${NC} ${WORKDIR}/error_log.txt"

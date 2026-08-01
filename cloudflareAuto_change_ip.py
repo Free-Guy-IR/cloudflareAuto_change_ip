@@ -1,5 +1,6 @@
 import argparse
 import ipaddress
+import logging
 import shutil
 import socket
 import json
@@ -7,6 +8,7 @@ import os
 import sys
 import time
 import traceback
+from logging.handlers import RotatingFileHandler
 
 import requests
 from ping3 import ping
@@ -176,22 +178,37 @@ def parse_args():
         "--reconfigure", action="store_true",
         help="حتی اگر .env موجود است، ویزارد پیکربندی را دوباره اجرا کن",
     )
+    parser.add_argument(
+        "--check", action="store_true",
+        help="اتصال به Cloudflare، سرورهای بکاپ و ربات تلگرام را تست کن و خارج شو",
+    )
     return parser.parse_args()
 
 
 args = parse_args()
 
-try:
-    initialize_env(force=args.reconfigure)
-except KeyboardInterrupt:
-    console.print("\n[yellow]پیکربندی لغو شد.[/yellow]")
-    sys.exit(1)
+if args.check:
+    # --check فرض می‌کند .env از قبل موجود است؛ اجرای بدون تعامل، بدون فراخوانی ویزارد
+    if not (os.path.exists(ENV_FILE) and os.path.getsize(ENV_FILE) > 0):
+        console.print(
+            Panel.fit(
+                "[red]فایل .env یافت نشد. ابتدا با --setup پیکربندی کنید.[/red]",
+                border_style="red",
+            )
+        )
+        sys.exit(1)
+else:
+    try:
+        initialize_env(force=args.reconfigure)
+    except KeyboardInterrupt:
+        console.print("\n[yellow]پیکربندی لغو شد.[/yellow]")
+        sys.exit(1)
 
-if args.setup:
-    console.print(
-        "\n[dim]برای شروع مانیتورینگ:[/dim] [bold]python3 cloudflareAuto_change_ip.py[/bold]\n"
-    )
-    sys.exit(0)
+    if args.setup:
+        console.print(
+            "\n[dim]برای شروع مانیتورینگ:[/dim] [bold]python3 cloudflareAuto_change_ip.py[/bold]\n"
+        )
+        sys.exit(0)
 
 load_dotenv()
 
@@ -221,9 +238,15 @@ for i in range(1, 100):
     ADDRESSES.append((int(port), ip, int(priority)))
 
 
+_error_logger = logging.getLogger("cloudflareAuto")
+_error_logger.setLevel(logging.INFO)
+_log_handler = RotatingFileHandler(ERROR_LOG_FILE, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8")
+_log_handler.setFormatter(logging.Formatter("%(asctime)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
+_error_logger.addHandler(_log_handler)
+
+
 def log_error(error_message):
-    with open(ERROR_LOG_FILE, 'a') as file:
-        file.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - {error_message}\n")
+    _error_logger.error(error_message)
 
 
 def get_subdomains(zone_id):
@@ -320,6 +343,24 @@ def write_status_file(status):
         json.dump(status, file, indent=4)
 
 
+def select_best_backup(exclude_ips):
+    """
+    از بین سرورهای بکاپ در دسترس (پینگ موفق)، سروری با کمترین تاخیر (ping) انتخاب می‌شود؛
+    در صورت تساوی پینگ، اولویت تعریف‌شده (priority) به عنوان معیار تصمیم دوم استفاده می‌شود.
+    """
+    candidates = []
+    for port, address, priority in ADDRESSES:
+        if address in exclude_ips:
+            continue
+        ping_time = check_ping(address)
+        if ping_time is not None:
+            candidates.append((ping_time, priority, address))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda c: (c[0], c[1]))
+    return candidates[0][2]
+
+
 def check_subdomain_status(zone_id, subdomain, ip, last_status, change_summary, status_summary):
     ping_time = check_ping(ip)
     if subdomain not in last_status:
@@ -334,12 +375,7 @@ def check_subdomain_status(zone_id, subdomain, ip, last_status, change_summary, 
     if ping_time is None:
         subdomain_status['ping_failures'] += 1
         if subdomain_status['ping_failures'] >= MAX_ATTEMPTS:
-            new_ip = None
-            sorted_addresses = sorted(ADDRESSES, key=lambda x: x[2])
-            for port, address, priority in sorted_addresses:
-                if address != subdomain_status['original_ip'] and address != subdomain_status['new_ip'] and check_ping(address) is not None:
-                    new_ip = address
-                    break
+            new_ip = select_best_backup({subdomain_status['original_ip'], subdomain_status['new_ip']})
             if new_ip:
                 update_ip_for_subdomain(zone_id, subdomain, new_ip, subdomain_status, last_status, change_summary)
             else:
@@ -363,12 +399,7 @@ def check_subdomain_status(zone_id, subdomain, ip, last_status, change_summary, 
         else:
             subdomain_status['tcp_failures'] += 1
             if subdomain_status['tcp_failures'] >= MAX_ATTEMPTS:
-                new_ip = None
-                sorted_addresses = sorted(ADDRESSES, key=lambda x: x[2])
-                for port, address, priority in sorted_addresses:
-                    if address != subdomain_status['original_ip'] and address != subdomain_status['new_ip'] and check_ping(address) is not None:
-                        new_ip = address
-                        break
+                new_ip = select_best_backup({subdomain_status['original_ip'], subdomain_status['new_ip']})
                 if new_ip:
                     update_ip_for_subdomain(zone_id, subdomain, new_ip, subdomain_status, last_status, change_summary)
                 else:
@@ -428,8 +459,74 @@ def update_ip_for_subdomain(zone_id, subdomain, new_ip, subdomain_status, last_s
         log_error(f"Error fetching DNS records for zone {zone_id}. Response Code: {response.status_code}")
 
 
+def run_check():
+    """
+    اتصال به هر Zone در Cloudflare، وضعیت پینگ/TCP هر سرور بکاپ و اعتبار ربات تلگرام را
+    تست می‌کند و یک جدول خلاصه چاپ می‌کند؛ برای عیب‌یابی سریع بدون منتظر ماندن برای یک
+    چرخه‌ی کامل مانیتورینگ.
+    """
+    console.print(Panel.fit("[bold cyan]بررسی سلامت پیکربندی[/bold cyan]", border_style="cyan"))
+    table = Table(box=box.ROUNDED, border_style="cyan")
+    table.add_column("مورد", style="bold")
+    table.add_column("وضعیت")
+    table.add_column("جزئیات")
+    all_ok = True
+
+    headers = {'X-Auth-Email': EMAIL, 'X-Auth-Key': API_KEY, 'Content-Type': 'application/json'}
+    for idx, zone_id in enumerate(ZONE_IDS, start=1):
+        try:
+            resp = requests.get(f"https://api.cloudflare.com/client/v4/zones/{zone_id}", headers=headers, timeout=10)
+            body = resp.json()
+            if resp.status_code == 200 and body.get('success'):
+                table.add_row(f"Zone {idx}", "[green]✔ متصل[/green]", body['result']['name'])
+            else:
+                all_ok = False
+                table.add_row(f"Zone {idx}", "[red]✘ خطا[/red]", f"HTTP {resp.status_code}")
+        except Exception as e:
+            all_ok = False
+            table.add_row(f"Zone {idx}", "[red]✘ خطا[/red]", str(e))
+
+    for idx, (port, ip, priority) in enumerate(ADDRESSES, start=1):
+        ping_time = check_ping(ip)
+        tcp_ok = check_tcp(ip, port)
+        online = ping_time is not None and tcp_ok
+        if not online:
+            all_ok = False
+        status = "[green]✔ آنلاین[/green]" if online else "[red]✘ قطع[/red]"
+        detail = f"ping={ping_time if ping_time is not None else 'timeout'}ms | tcp={'ok' if tcp_ok else 'fail'}"
+        table.add_row(f"Server {idx} ({ip}:{port})", status, detail)
+
+    try:
+        resp = requests.get(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getMe", timeout=10)
+        body = resp.json()
+        if resp.status_code == 200 and body.get('ok'):
+            table.add_row("Telegram Bot", "[green]✔ معتبر[/green]", f"@{body['result'].get('username')}")
+            send_telegram_message("✅ تست اتصال از دستور --check با موفقیت انجام شد.")
+        else:
+            all_ok = False
+            table.add_row("Telegram Bot", "[red]✘ خطا[/red]", f"HTTP {resp.status_code}")
+    except Exception as e:
+        all_ok = False
+        table.add_row("Telegram Bot", "[red]✘ خطا[/red]", str(e))
+
+    console.print(table)
+    if all_ok:
+        console.print(Panel.fit("[bold green]همه‌چیز سالم است ✔[/bold green]", border_style="green"))
+    else:
+        console.print(Panel.fit("[bold red]برخی موارد نیاز به بررسی دارند ✘[/bold red]", border_style="red"))
+    return all_ok
+
+
 def main():
     last_status = read_status_file()
+    try:
+        from telegram_manager import start_telegram_manager
+        start_telegram_manager(TELEGRAM_TOKEN, CHAT_ID, EMAIL, API_KEY, ZONE_IDS, log_error)
+        send_telegram_message(
+            "🤖 مانیتورینگ شروع شد. برای مشاهده و مدیریت رکوردهای DNS دستور /domains را ارسال کنید."
+        )
+    except Exception:
+        log_error(f"Failed to start Telegram DNS manager: {traceback.format_exc()}")
     console.print(
         Panel.fit(
             f"[bold green]مانیتورینگ شروع شد[/bold green]  [dim](هر {INTERVAL} ثانیه بررسی می‌شود)[/dim]",
@@ -468,4 +565,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if args.check:
+        sys.exit(0 if run_check() else 1)
+    else:
+        main()
