@@ -1,53 +1,198 @@
+import argparse
+import ipaddress
+import shutil
 import socket
 import json
 import os
-import requests
+import sys
 import time
-from ping3 import ping
-from dotenv import load_dotenv
 import traceback
 
+import requests
+from ping3 import ping
+from dotenv import load_dotenv
 
-def initialize_env():
+from rich.console import Console
+from rich.panel import Panel
+from rich.prompt import Prompt, IntPrompt, Confirm
+from rich.table import Table
+from rich import box
+
+console = Console()
+ENV_FILE = '.env'
+
+
+def mask_secret(value):
+    value = value or ""
+    if len(value) <= 4:
+        return "*" * len(value)
+    return "*" * (len(value) - 4) + value[-4:]
+
+
+def prompt_nonempty(label, password=False):
+    while True:
+        value = Prompt.ask(label, password=password).strip()
+        if value:
+            return value
+        console.print("  [red]این مقدار نمی‌تواند خالی باشد، دوباره وارد کنید.[/red]")
+
+
+def prompt_ip(label):
+    while True:
+        value = Prompt.ask(label).strip()
+        try:
+            ipaddress.ip_address(value)
+            return value
+        except ValueError:
+            console.print(f"  [red]آدرس IP نامعتبر است: {value}[/red]")
+
+
+def prompt_port(label, default=None):
+    while True:
+        value = IntPrompt.ask(label, default=default)
+        if 1 <= value <= 65535:
+            return value
+        console.print("  [red]پورت باید عددی بین 1 تا 65535 باشد.[/red]")
+
+
+def prompt_positive_int(label, default=None):
+    while True:
+        value = IntPrompt.ask(label, default=default)
+        if value > 0:
+            return value
+        console.print("  [red]مقدار باید بزرگ‌تر از صفر باشد.[/red]")
+
+
+def show_banner():
+    console.rule("[bold cyan]CloudflareAuto ChangeIP[/bold cyan]", style="cyan")
+    console.print(
+        Panel.fit(
+            "[bold white]ویزارد پیکربندی اولیه[/bold white]\n"
+            "[dim]این اطلاعات فقط یک‌بار پرسیده می‌شود و در فایل .env روی همین سرور ذخیره می‌شود.[/dim]\n"
+            "[dim]کانال بروزرسانی: https://t.me/Freeguy_IR[/dim]",
+            border_style="cyan",
+            box=box.ROUNDED,
+        )
+    )
+    console.print()
+
+
+def review_and_confirm(summary_rows):
+    table = Table(title="خلاصه‌ی تنظیمات وارد شده", box=box.ROUNDED, border_style="green")
+    table.add_column("متغیر", style="bold cyan", no_wrap=True)
+    table.add_column("مقدار")
+    for key, value in summary_rows:
+        table.add_row(key, str(value))
+    console.print(table)
+    console.print()
+    return Confirm.ask("[bold]این تنظیمات ذخیره و اعمال شوند؟[/bold]", default=True)
+
+
+def initialize_env(force=False):
     """
-    اگر فایل .env وجود نداشته باشد یا خالی باشد،
-    اطلاعات مورد نیاز (Zone ID، IP سرورها، و غیره) پرسیده می‌شود و در .env ذخیره می‌گردد.
+    ویزارد تعاملی برای ساخت فایل .env؛ در صورت نیاز به تغییر تنظیمات، اجرای دستی با
+    `python3 cloudflareAuto_change_ip.py --reconfigure` این تابع را دوباره فعال می‌کند.
     """
-    if not os.path.exists('.env') or os.path.getsize('.env') == 0:
-        print("No valid .env file found. Let's create one...")
-        with open('.env', 'w') as env_file:
-            num_zones = int(input("How many domains (zones) do you have? "))
-            for i in range(1, num_zones + 1):
-                zone_id = input(f"Enter the Zone ID for domain {i}: ")
-                env_file.write(f"ZONE_{i}_ID={zone_id}\n")
+    env_exists = os.path.exists(ENV_FILE) and os.path.getsize(ENV_FILE) > 0
 
-            num_servers = int(input("How many servers do you have? "))
-            for i in range(1, num_servers + 1):
-                ip = input(f"Enter the IP of server {i}: ")
-                port = input(f"Enter the TCP port for server {i}: ")
-                priority = input(f"Enter the priority for server {i} (1 = highest priority): ")
-                env_file.write(f"SERVER_{i}_IP={ip}\n")
-                env_file.write(f"SERVER_{i}_PORT={port}\n")
-                env_file.write(f"SERVER_{i}_PRIORITY={priority}\n")
+    if env_exists and not force:
+        console.print(
+            Panel.fit(
+                "[yellow]فایل .env از قبل موجود است.[/yellow]",
+                border_style="yellow",
+            )
+        )
+        if not Confirm.ask("می‌خواهید تنظیمات را از نو وارد کنید؟", default=False):
+            return False
 
-            email = input("Enter your Cloudflare Email (for Global API Key): ")
-            env_file.write(f"CLOUDFLARE_EMAIL={email}\n")
+    while True:
+        console.clear()
+        show_banner()
+        env_lines = []
+        summary_rows = []
 
-            api_key = input("Enter your Cloudflare Global API Key: ")
-            env_file.write(f"CLOUDFLARE_API_KEY={api_key}\n")
+        console.print("[bold cyan]۱) دامنه‌ها (Zones)[/bold cyan]")
+        num_zones = prompt_positive_int("چند دامنه (Zone) دارید؟", default=1)
+        for i in range(1, num_zones + 1):
+            zone_id = prompt_nonempty(f"  Zone ID دامنه {i}")
+            env_lines.append(f"ZONE_{i}_ID={zone_id}")
+            summary_rows.append((f"Zone {i}", zone_id))
 
-            telegram_token = input("Enter your Telegram bot token: ")
-            env_file.write(f"TELEGRAM_TOKEN={telegram_token}\n")
+        console.print("\n[bold cyan]۲) سرورهای بکاپ (ایران)[/bold cyan]")
+        num_servers = prompt_positive_int("چند سرور دارید؟", default=1)
+        for i in range(1, num_servers + 1):
+            ip = prompt_ip(f"  آی‌پی سرور {i}")
+            port = prompt_port(f"  پورت TCP تانل‌شده‌ی سرور {i}", default=443)
+            priority = prompt_positive_int(f"  اولویت سرور {i} (1 = بیشترین اولویت)", default=i)
+            env_lines += [
+                f"SERVER_{i}_IP={ip}",
+                f"SERVER_{i}_PORT={port}",
+                f"SERVER_{i}_PRIORITY={priority}",
+            ]
+            summary_rows.append((f"Server {i}", f"{ip}:{port}  (priority={priority})"))
 
-            chat_id = input("Enter your Telegram chat ID: ")
-            env_file.write(f"CHAT_ID={chat_id}\n")
+        console.print("\n[bold cyan]۳) Cloudflare[/bold cyan]")
+        email = prompt_nonempty("  ایمیل اکانت Cloudflare")
+        api_key = prompt_nonempty("  Global API Key", password=True)
+        env_lines += [f"CLOUDFLARE_EMAIL={email}", f"CLOUDFLARE_API_KEY={api_key}"]
+        summary_rows += [("Cloudflare Email", email), ("Cloudflare API Key", mask_secret(api_key))]
 
-            interval = input("Enter the interval for checking servers (in seconds, default 120): ")
-            env_file.write(f"INTERVAL={interval or 120}\n")
-        print(".env file created successfully.")
+        console.print("\n[bold cyan]۴) تلگرام[/bold cyan]")
+        telegram_token = prompt_nonempty("  توکن ربات تلگرام", password=True)
+        chat_id = prompt_nonempty("  Chat ID تلگرام")
+        env_lines += [f"TELEGRAM_TOKEN={telegram_token}", f"CHAT_ID={chat_id}"]
+        summary_rows += [("Telegram Token", mask_secret(telegram_token)), ("Telegram Chat ID", chat_id)]
+
+        console.print("\n[bold cyan]۵) بازه‌ی بررسی[/bold cyan]")
+        interval = prompt_positive_int("  فاصله‌ی بررسی سرورها (ثانیه)", default=120)
+        env_lines.append(f"INTERVAL={interval}")
+        summary_rows.append(("Interval", f"{interval} ثانیه"))
+
+        console.print()
+        if review_and_confirm(summary_rows):
+            if env_exists:
+                shutil.copy(ENV_FILE, ENV_FILE + ".bak")
+            with open(ENV_FILE, "w") as env_file:
+                env_file.write("\n".join(env_lines) + "\n")
+            console.print(
+                Panel.fit(
+                    "[bold green]✔ پیکربندی با موفقیت در .env ذخیره شد.[/bold green]",
+                    border_style="green",
+                )
+            )
+            return True
+
+        console.print("[yellow]دوباره از ابتدا شروع می‌کنیم...[/yellow]\n")
+        env_exists = os.path.exists(ENV_FILE) and os.path.getsize(ENV_FILE) > 0
 
 
-initialize_env()
+def parse_args():
+    parser = argparse.ArgumentParser(description="CloudflareAuto ChangeIP")
+    parser.add_argument(
+        "--setup", "-s", action="store_true",
+        help="فقط ویزارد پیکربندی (.env) را اجرا کن و بدون شروع مانیتورینگ خارج شو",
+    )
+    parser.add_argument(
+        "--reconfigure", action="store_true",
+        help="حتی اگر .env موجود است، ویزارد پیکربندی را دوباره اجرا کن",
+    )
+    return parser.parse_args()
+
+
+args = parse_args()
+
+try:
+    initialize_env(force=args.reconfigure)
+except KeyboardInterrupt:
+    console.print("\n[yellow]پیکربندی لغو شد.[/yellow]")
+    sys.exit(1)
+
+if args.setup:
+    console.print(
+        "\n[dim]برای شروع مانیتورینگ:[/dim] [bold]python3 cloudflareAuto_change_ip.py[/bold]\n"
+    )
+    sys.exit(0)
+
 load_dotenv()
 
 EMAIL = os.getenv('CLOUDFLARE_EMAIL')
@@ -285,6 +430,12 @@ def update_ip_for_subdomain(zone_id, subdomain, new_ip, subdomain_status, last_s
 
 def main():
     last_status = read_status_file()
+    console.print(
+        Panel.fit(
+            f"[bold green]مانیتورینگ شروع شد[/bold green]  [dim](هر {INTERVAL} ثانیه بررسی می‌شود)[/dim]",
+            border_style="green",
+        )
+    )
     while True:
         try:
             start_time = time.time()
@@ -307,6 +458,9 @@ def main():
             elapsed_time = time.time() - start_time
             sleep_time = max(0, INTERVAL - elapsed_time)
             time.sleep(sleep_time)
+        except KeyboardInterrupt:
+            console.print("\n[yellow]متوقف شد توسط کاربر.[/yellow]")
+            break
         except Exception as e:
             error_message = traceback.format_exc()
             log_error(error_message)
